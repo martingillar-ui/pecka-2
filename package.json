@@ -1,0 +1,9 @@
+{
+  "name": "vyprava-na-pecku",
+  "version": "1.0.0",
+  "description": "Rytířská hra na cestu z Borovničky na hrad Pecka – body, odznaky, GPS a živé pořadí",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "express": "^4.19.2" }
+}

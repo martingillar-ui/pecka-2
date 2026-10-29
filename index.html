@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1b3a8a">
+<title>Výprava na Pecku</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Grenze+Gotisch:wght@600;800&family=Nunito:wght@400;600;800&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+html{color-scheme:light}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+[hidden]{display:none!important}
+img{max-width:100%}
+
+/* Layout: one narrow column. Home = live leaderboard + player picker; player view = trail of 12 stops; station = stacked task cards; sticky pine score bar */
+:root{
+  --bg:#eef2fb; --surface:#ffffff; --fg:#14213d; --muted:#55627f; --line:#d3dcef;
+  --pine:#1d44a3; --pine-soft:#e2e9fb; --plum:#0f6fb8; --plum-soft:#e0f0fb; --gold:#b98a1f; --gold-soft:#f8eed3; --heart:#d23b4b;
+  --good:#23804f; --good-soft:#e1f3e9; --bad:#b8323f; --bad-soft:#fbe3e5;
+  --display:"Grenze Gotisch","Georgia",serif; --body:"Nunito",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1328; --surface:#141e3b; --fg:#e7ecfa; --muted:#9fabca; --line:#26345e;
+  --pine:#8fb0ff; --pine-soft:#1b2a55; --plum:#6cc4f5; --plum-soft:#13324a; --gold:#e8c063; --gold-soft:#3a3120; --heart:#ff7383;
+  --good:#74d39e; --good-soft:#163526; --bad:#ff8a95; --bad-soft:#40202a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1328; --surface:#141e3b; --fg:#e7ecfa; --muted:#9fabca; --line:#26345e;
+  --pine:#8fb0ff; --pine-soft:#1b2a55; --plum:#6cc4f5; --plum-soft:#13324a; --gold:#e8c063; --gold-soft:#3a3120; --heart:#ff7383;
+  --good:#74d39e; --good-soft:#163526; --bad:#ff8a95; --bad-soft:#40202a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:17px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:#1b3a8a}
+.wrap{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 56px}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);font-weight:800;line-height:1.05;text-wrap:balance;margin:0}
+.small{font-size:14px;color:var(--muted)}
+
+/* bar */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:#1b3a8a;color:#fff;margin:0 calc(-1*max(16px,env(safe-area-inset-left,0px)));padding:10px max(16px,env(safe-area-inset-left,0px));display:flex;align-items:center;gap:10px;min-height:56px}
+.bar .back{background:rgba(255,255,255,.16);border:0;border-radius:999px;padding:6px 14px;color:#fff;font-weight:800;white-space:nowrap}
+.bar .ttl{font-family:var(--display);font-size:24px}
+.bar .right{margin-left:auto;display:flex;align-items:center;gap:8px;font-weight:800;font-variant-numeric:tabular-nums}
+.bar .who{display:flex;align-items:center;gap:6px;min-width:0}
+.bar .who span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px}
+.chip{font-size:12px;font-weight:800;border-radius:999px;padding:3px 10px;background:rgba(255,255,255,.16)}
+.coin{width:22px;height:22px;border-radius:50%;background:#e4bc5a;box-shadow:inset 0 -3px 0 rgba(0,0,0,.2);display:inline-block;flex:0 0 auto}
+
+/* avatar shield */
+.av{--c:#1b3a8a;display:inline-grid;place-items:center;width:44px;height:48px;flex:0 0 auto;background:var(--c);clip-path:path("M0 0 H44 V26 C44 38 33 45 22 48 C11 45 0 38 0 26 Z");font-size:24px;line-height:1}
+.av.sm{width:30px;height:33px;font-size:16px;clip-path:path("M0 0 H30 V18 C30 26 22 31 15 33 C8 31 0 26 0 18 Z")}
+.av.lg{width:88px;height:96px;font-size:48px;clip-path:path("M0 0 H88 V52 C88 76 66 90 44 96 C22 90 0 76 0 52 Z")}
+
+/* hero */
+.hero{padding:24px 0 4px}
+.eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:800;color:var(--plum)}
+.hero h1{font-size:clamp(46px,13vw,66px);color:var(--pine);margin:6px 0 10px}
+.hero p{margin:0;color:var(--muted)}
+.facts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+.facts span{background:var(--pine-soft);color:var(--pine);border-radius:999px;padding:4px 12px;font-weight:800;font-size:14px}
+.sec{margin-top:26px}
+.sec h3{font-size:30px;color:var(--pine);margin-bottom:10px}
+
+/* leaderboard */
+.board{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.board li{display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--line)}
+.board li:first-child{border-top:0}
+.board li.me{background:var(--plum-soft)}
+.place{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:15px;flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--muted);background:var(--bg)}
+.place.p1{background:#e4bc5a;color:#3b2a06}.place.p2{background:#c9cfd2;color:#2a3134}.place.p3{background:#d29a6a;color:#3a1f08}
+.board .nm{flex:1;min-width:0}
+.board .nm b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prog{height:6px;border-radius:999px;background:var(--line);overflow:hidden;margin-top:4px}
+.prog i{display:block;height:100%;background:var(--pine);border-radius:999px}
+.board .pt{font-weight:800;font-variant-numeric:tabular-nums;color:var(--gold);font-size:18px;white-space:nowrap}
+.empty{background:var(--surface);border:2px dashed var(--line);border-radius:18px;padding:18px;text-align:center;color:var(--muted)}
+
+/* picker */
+.pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.pick button{border:2px solid var(--line);background:var(--surface);border-radius:16px;padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;font-weight:800;font-size:14px;min-width:0}
+.pick button span:last-child{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick .add{border-style:dashed;color:var(--plum)}
+.pick .add .plus{width:44px;height:48px;display:grid;place-items:center;font-size:30px;font-weight:800}
+
+/* forms */
+.field{display:flex;flex-direction:column;gap:6px;margin-top:16px}
+.field label{font-weight:800;font-size:15px}
+.field input{border:2px solid var(--line);background:var(--surface);border-radius:12px;padding:11px 12px;width:100%}
+.avgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.avgrid button{border:3px solid transparent;background:var(--surface);border-radius:14px;padding:6px 0;display:grid;place-items:center}
+.avgrid button[aria-pressed="true"]{border-color:var(--plum);background:var(--plum-soft)}
+.err{color:var(--bad);font-weight:800;font-size:15px;margin-top:10px}
+
+/* pin pad */
+.login{text-align:center;padding-top:26px}
+.login h2{font-size:40px;color:var(--pine);margin:10px 0 4px}
+.dots{display:flex;justify-content:center;gap:14px;margin:18px 0 6px}
+.dots i{width:18px;height:18px;border-radius:50%;border:3px solid var(--pine)}
+.dots i.on{background:var(--pine)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:300px;margin:16px auto 0}
+.pad button{border:0;background:var(--surface);border-radius:16px;padding:16px 0;font-size:26px;font-weight:800;box-shadow:0 1px 0 var(--line)}
+.shake{animation:shake .35s}
+@keyframes shake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+
+/* player card */
+.pcard{display:flex;gap:16px;align-items:center;padding:22px 0 6px}
+.pcard h2{font-size:38px;color:var(--pine)}
+.pcard .rk{font-weight:800;color:var(--plum)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.stats div{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
+.stats b{display:block;font-size:24px;font-variant-numeric:tabular-nums;color:var(--pine);line-height:1.1}
+.stats span{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.badges{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.badge{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;font-size:12px;font-weight:800;line-height:1.15;color:var(--muted)}
+.badge i{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:22px;background:var(--bg);border:2px dashed var(--line);filter:grayscale(1);opacity:.55}
+.badge.on{color:var(--fg)}
+.badge.on i{background:var(--gold-soft);border:2px solid var(--gold);filter:none;opacity:1}
+
+/* trail */
+.trail{list-style:none;margin:16px 0 0;padding:0;position:relative}
+.trail::before{content:"";position:absolute;left:23px;top:24px;bottom:24px;border-left:4px dotted var(--line)}
+.stop button.node{all:unset;cursor:pointer;display:flex;gap:14px;align-items:center;width:100%;border-radius:14px;padding:6px 8px 6px 0}
+.stop button.node:focus-visible{outline:3px solid var(--gold)}
+.dot{flex:0 0 50px;height:50px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:18px;background:var(--surface);border:3px solid var(--line);color:var(--muted);position:relative;z-index:1;font-variant-numeric:tabular-nums}
+.stop.done .dot{background:var(--pine);border-color:var(--pine);color:var(--bg)}
+.stop.next .dot{border-color:var(--plum);color:var(--plum);box-shadow:0 0 0 6px var(--plum-soft)}
+.stop .meta{min-width:0;flex:1}
+.stop .place2{font-size:13px;color:var(--muted);font-weight:600}
+.stop .name2{font-weight:800;line-height:1.25}
+.stop .pts{font-variant-numeric:tabular-nums;font-weight:800;color:var(--gold);white-space:nowrap;font-size:15px}
+.castle{display:flex;gap:14px;align-items:center;padding:8px 0 0}
+.castle .dot{background:var(--plum);border-color:var(--plum);color:var(--bg)}
+
+.primary{display:block;width:100%;border:0;border-radius:14px;padding:14px 18px;background:var(--plum);color:#fff;font-weight:800;font-size:18px;margin-top:22px}
+:root:not([data-theme="light"]) .primary{color:#fff}
+.ghost{border:2px solid var(--line);background:transparent;border-radius:12px;padding:10px 14px;font-weight:800}
+.linkish{background:none;border:0;padding:0;color:var(--plum);font-weight:800;text-decoration:underline}
+
+/* station */
+.shead{padding:22px 0 6px}
+.shead .num{font-weight:800;color:var(--plum);font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+.shead h2{font-size:clamp(36px,10vw,48px);color:var(--pine);margin:4px 0 6px}
+.where{background:var(--pine-soft);border-radius:12px;padding:10px 12px;font-size:15px;margin:10px 0}
+.where b{color:var(--pine)}
+.intro{margin:10px 0 4px}
+.warn{background:var(--plum-soft);border-radius:12px;padding:10px 12px;font-size:15px;margin:8px 0}
+.items{display:flex;flex-direction:column;gap:14px;margin-top:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px}
+.card .q{font-weight:800;margin:0 0 12px;line-height:1.35}
+.card .tag{display:inline-block;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{text-align:left;border:2px solid var(--line);background:var(--bg);border-radius:12px;padding:12px 14px;font-weight:600}
+.opt.ok{border-color:var(--good);background:var(--good-soft);color:var(--good);font-weight:800}
+.opt.no{border-color:var(--bad);background:var(--bad-soft);color:var(--bad)}
+.opt:disabled{cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row input{flex:1 1 160px;min-width:0;border:2px solid var(--line);background:var(--bg);border-radius:12px;padding:11px 12px}
+.go{border:0;border-radius:12px;padding:11px 18px;background:var(--pine);color:var(--bg);font-weight:800}
+.fb{margin-top:10px;font-weight:800;font-size:15px}
+.fb.ok{color:var(--good)} .fb.no{color:var(--bad)} .fb.mid{color:var(--gold)}
+.cipher{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:24px;letter-spacing:.18em;font-weight:800;color:var(--plum);background:var(--plum-soft);border-radius:12px;padding:12px;text-align:center;margin:0 0 10px;overflow-x:auto}
+.abc{display:grid;grid-template-columns:repeat(13,1fr);gap:2px;font-family:ui-monospace,Menlo,monospace;font-size:12px;text-align:center;margin:0 0 12px}
+.abc span{background:var(--bg);border-radius:4px;padding:2px 0;line-height:1.2}
+.abc span i{display:block;font-style:normal;color:var(--plum);font-weight:800}
+.scr{font-family:ui-monospace,Menlo,monospace;font-size:22px;letter-spacing:.3em;font-weight:800;color:var(--pine);margin:0 0 8px}
+.bingo{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.bingo button{border:2px solid var(--line);background:var(--bg);border-radius:12px;padding:12px 6px;font-weight:700;font-size:14px;line-height:1.2;min-height:64px}
+.bingo button[aria-pressed="true"]{border-color:var(--pine);background:var(--pine);color:var(--bg)}
+.timer{font-variant-numeric:tabular-nums;font-size:52px;font-weight:800;text-align:center;color:var(--pine);margin:4px 0 10px;line-height:1}
+.timer.end{color:var(--plum)}
+.slider{width:100%;accent-color:var(--plum)}
+.big{font-size:34px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;color:var(--plum);margin:4px 0}
+.checks{display:flex;gap:8px;flex-wrap:wrap}
+.yes{border:0;border-radius:12px;padding:11px 16px;background:var(--good);color:var(--bg);font-weight:800}
+.nope{border:2px solid var(--line);background:transparent;border-radius:12px;padding:9px 14px;font-weight:700}
+.got{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-weight:800}
+.got .p{color:var(--gold);font-variant-numeric:tabular-nums}
+.hint{background:none;border:0;padding:0;margin-top:10px;color:var(--plum);font-weight:800;text-decoration:underline;font-size:14px}
+
+/* finale */
+.final{text-align:center;padding:26px 0 6px}
+.final h2{font-size:clamp(40px,12vw,56px);color:var(--pine);margin-top:10px}
+.final .rank{font-size:22px;font-weight:800;color:var(--plum);margin:6px 0}
+.final .av.lg{margin:0 auto}
+
+/* admin */
+.adm{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.adm li{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px;flex-wrap:wrap}
+.adm .nm{flex:1;min-width:0;font-weight:800}
+.adm code{font-size:15px;background:var(--bg);border-radius:8px;padding:2px 8px}
+
+/* knightly ornaments */
+.art{display:block;width:100%;height:auto;margin:6px 0 4px}
+.sec h3::before{content:"⚔ ";color:var(--gold);font-size:.8em}
+.deco{display:flex;justify-content:center;gap:14px;font-size:26px;margin:12px 0 0;flex-wrap:wrap}
+.emblem{width:72px;height:80px;display:grid;place-items:center;font-size:38px;background:var(--pine);clip-path:path("M0 0 H72 V42 C72 62 54 74 36 80 C18 74 0 62 0 42 Z");float:right;margin:0 0 6px 12px;box-shadow:inset 0 0 0 4px var(--gold)}
+.stop .ico{font-size:20px;flex:0 0 auto}
+.hearts{color:var(--heart);letter-spacing:2px}
+.bar{background-image:linear-gradient(90deg,transparent 0 calc(100% - 4px),transparent),repeating-linear-gradient(135deg,rgba(255,255,255,.05) 0 10px,transparent 10px 20px)}
+.bar::after{content:"";position:absolute;left:0;right:0;bottom:-6px;height:6px;background:repeating-linear-gradient(90deg,#e8c063 0 12px,transparent 12px 18px);pointer-events:none}
+.crown{font-size:56px;line-height:1;margin-bottom:-6px}
+/* toast + confetti */
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20;background:var(--fg);color:var(--bg);border-radius:14px;padding:12px 16px;font-weight:800;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center}
+#fx{position:fixed;inset:0;pointer-events:none;z-index:15;width:100%;height:100%}
+@media (prefers-reduced-motion:no-preference){
+  .stop.next .dot{animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{50%{box-shadow:0 0 0 11px var(--plum-soft)}}
+  .pop{animation:pop .35s ease}
+  @keyframes pop{0%{transform:scale(.9)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
+  .toast{animation:up .3s ease}
+  @keyframes up{from{transform:translate(-50%,20px);opacity:0}}
+}
+
+
+/* map + gps */
+.map{height:320px;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:var(--pine-soft);margin-top:8px;z-index:0}
+.mk{width:32px;height:36px;display:grid;place-items:center;font-weight:800;font-size:15px;color:#1b3a8a;background:#fff;clip-path:path("M0 0 H32 V19 C32 28 24 33 16 36 C8 33 0 28 0 19 Z");box-shadow:inset 0 0 0 3px #1b3a8a;font-family:Nunito,system-ui,sans-serif}
+.mk.next{background:#e8c063;box-shadow:inset 0 0 0 3px #1b3a8a}
+.mk.open{background:#0f6fb8;color:#fff;box-shadow:inset 0 0 0 3px #e8c063}
+.mk.done{background:#1b3a8a;color:#e8c063;box-shadow:inset 0 0 0 3px #e8c063}
+.mepin{width:36px;height:36px;border-radius:50%;background:#fff;border:3px solid #0f6fb8;display:grid;place-items:center;font-size:20px;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.geo{background:var(--plum-soft);color:var(--fg);border-radius:12px;padding:9px 12px;font-weight:800;font-size:15px}
+.geo.warn{background:var(--bad-soft);color:var(--bad)}
+.stop .open{font-size:13px;font-weight:800;color:var(--plum);white-space:nowrap}
+.stop .lock{font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap}
+.locked{background:var(--surface);border:2px dashed var(--line);border-radius:18px;padding:22px 16px;text-align:center;margin-top:18px}
+.locked h3{font-size:30px;color:var(--pine);margin:6px 0}
+.lockicon{font-size:44px}
+.confirm{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}
+.leaflet-container{font-family:var(--body)}
+
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<canvas id="fx" hidden></canvas>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ---------- trasa a zastávky (souřadnice z plánu trasy na Mapy.com) ---------- */
+const ROUTE = [[50.500484,15.668925],[50.503395,15.655829],[50.495390,15.639910],[50.491762,15.628816],[50.492864,15.626543],[50.490596,15.609667],[50.482364,15.610984],[50.481637,15.608317],[50.480780,15.606677],[50.478957,15.604548]];
+const STATIONS = [
+ {id:1, ic:"🛡️", lat:50.500484, lng:15.668925, r:60, km:"0", place:"Start v Borovničce", title:"Čtení cesty", where:"Start u zastávky v Borovničce, ještě než vyrazíte.",
+  intro:"Každý pořádný poutník musí umět číst značky. Bez nich bys v lese zabloudil dřív, než řekneš Pecka.",
+  items:[
+   {k:"choice", q:"Turistická značka má tři pruhy. Jakou barvu mají ty dva krajní?", o:["Bílou","Černou","Žlutou"], ok:0, pts:3},
+   {k:"choice", q:"Podle jaké barvy značky půjdeme lesem až do Lázní?", o:["Červené","Zelené","Modré"], ok:1, pts:3},
+   {k:"choice", q:"Co znamená značka, která má na konci špičku jako šipku?", o:["Cesta tady odbočuje","Konec trasy","Pozor, divá zvěř"], ok:0, pts:3}
+  ]},
+ {id:2, ic:"🐎", lat:50.501940, lng:15.662377, r:120, km:"0,6", place:"Podél silnice a trati", title:"Odhad poutníka", where:"Na první části cesty podél silnice a kolejí.",
+  intro:"Dobrý rytíř umí odhadnout, jak daleko má k cíli. Tipni si sám, neraď se s ostatními.",
+  warn:"Jdeme kus u silnice. Držte se u kraje za sebou.",
+  items:[
+   {k:"estimate", q:"Kolik kilometrů měří celá výprava z Borovničky na hrad?", min:1, max:15, step:0.5, unit:"km", target:7.5, bands:[[0.6,10],[1.6,6],[3,3]], floor:1}
+  ]},
+ {id:3, ic:"🏹", lat:50.503395, lng:15.655829, r:60, km:"1,2", place:"Odbočka do lesa", title:"Stopař", where:"Tady cesta uhýbá na zelenou značku do lesa.",
+  intro:"Značky se schovávají na stromech, kamenech i sloupech. Hledej je očima stopaře.",
+  items:[
+   {k:"check", q:"Najdi zelenou značku a dotkni se jí.", pts:4},
+   {k:"count", q:"Počítej zelené značky až k další výzvě. Kolik jsi jich napočítal? Zapiš to, až tam dojdeš.", bands:[[8,6],[5,4],[2,2]]}
+  ]},
+ {id:4, ic:"🍀", lat:50.499393, lng:15.647870, r:120, km:"2", place:"Les na zelené", title:"Lesní bingo", where:"V lese na zelené značce.",
+  intro:"Ťukni na každou věc, kterou jsi sám opravdu našel a ukázal dospělému. Za každou 2 body, nejvýš 12. Houby jen ukaž, nesahej na ně.",
+  items:[
+   {k:"bingo", q:"Co jsi našel?", list:["Šiška","Mech","Žalud nebo bukvice","Pírko","Kámen jako srdce","Žlutý list","Houba","Pavučina","Kořen přes cestu"], each:2, max:12}
+  ]},
+ {id:5, ic:"🦉", lat:50.495390, lng:15.639910, r:60, km:"2,9", place:"Hluboký les", title:"Minuta ticha", where:"Hluboko v lese, daleko od silnice.",
+  intro:"Dospělý spustí časovač pro všechny najednou. Minutu nikdo nemluví. Každý si potichu na prstech počítá, kolik různých zvuků slyší, a pak to sám zapíše.",
+  items:[
+   {k:"timer", q:"Časovač pro celou výpravu.", secs:60},
+   {k:"count", q:"Kolik různých zvuků jsi slyšel ty? (pták, vítr, větvička, vlak…)", bands:[[6,10],[4,7],[2,4],[1,2]]}
+  ]},
+ {id:6, ic:"📜", lat:50.491762, lng:15.628816, r:60, km:"4", place:"Lesní cesta", title:"Tajná zpráva", where:"Na lesní cestě po zelené.",
+  intro:"Na stromě visela zpráva v šifře. Každé písmeno je posunuté o jedno dál v abecedě: místo A je B, místo B je C. Rozlušti, kdo bydlel na hradě Pecka.",
+  items:[
+   {k:"cipher", q:"Jak zní jméno?", code:"LSZTUPG IBSBOU", acc:["harant"], solution:"KRYSTOF HARANT", pts:15, hint:"První slovo je křestní jméno, druhé začíná na H."}
+  ]},
+ {id:7, ic:"💧", lat:50.491957, lng:15.619793, r:120, km:"4,8", place:"Údolí k Lázním", title:"Vodní hádanky", where:"V údolí, kudy zelená vede k Lázním.",
+  intro:"Údolím teče voda a ta má svá tajemství.",
+  warn:"Jestli půjdete kolem potoka, k vodě jen s dospělým.",
+  items:[
+   {k:"text", q:"Hádanka: Bez nohou běží, bez úst šumí, nikdy se neunaví. Co je to?", acc:["potok","voda","reka","ricka","bystrina","pramen"], pts:3, hint:"Teče údolím."},
+   {k:"choice", q:"Jak se jmenuje říčka, která teče Peckou?", o:["Vltava","Javorka","Labe"], ok:1, pts:3},
+   {k:"choice", q:"Proč se nemá pít voda z lesního potoka?", o:["Může v ní být špína a bakterie","Je moc slaná","Patří jen rybám"], ok:0, pts:3}
+  ]},
+ {id:8, ic:"⚔️", lat:50.491050, lng:15.613042, r:120, km:"5,4", place:"Před Lázněmi", title:"Rytířský výcvik", where:"Na zelené kousek před Lázněmi.",
+  intro:"Panoš musí být silný a vytrvalý. Zkoušky můžete dělat všichni najednou, ale každý si zapíše jen to, co sám zvládl.",
+  items:[
+   {k:"timer", q:"Zkouška rovnováhy: stůj 20 sekund na jedné noze.", secs:20},
+   {k:"check", q:"Ustál jsi 20 sekund na jedné noze?", pts:4},
+   {k:"check", q:"Udělal jsi 10 rytířských dřepů s mečem (klackem) nad hlavou?", pts:4},
+   {k:"check", q:"Doběhl jsi k nejbližšímu stromu a zpět dřív, než dospělý napočítal do 15?", pts:4}
+  ]},
+ {id:9, ic:"🪄", lat:50.490596, lng:15.609667, r:80, km:"5,7", place:"Lázně", title:"Rozsypaná slova", where:"V Lázních, kde zelená sejde k silnici. Luštěte mimo silnici.",
+  intro:"Kouzelník rozsypal písmena hradních slov. Poskládej je zpátky.",
+  warn:"Dál se jde podél silnice do Pecky. Za sebou u kraje.",
+  items:[
+   {k:"text", scr:"N Á B R A", q:"Kudy se vchází do hradu?", acc:["brana"], pts:3, hint:"Začíná na B."},
+   {k:"text", scr:"Ž Ě V", q:"Nejvyšší část hradu.", acc:["vez"], pts:3, hint:"Začíná na V."},
+   {k:"text", scr:"Ř Í T Y R", q:"Bojovník v brnění.", acc:["rytir"], pts:3, hint:"Začíná na R."},
+   {k:"text", scr:"B Y D H R A", q:"Silné zdi kolem hradu.", acc:["hradby"], pts:3, hint:"Začíná na H."}
+  ]},
+ {id:10, ic:"🏰", lat:50.482364, lng:15.610984, r:80, km:"6,8", place:"Kraj Pecky", title:"Rozhled", where:"Na kraji Pecky, odkud už je vidět hrad.",
+  intro:"Cíl je na dohled. Rozhlédni se.",
+  items:[
+   {k:"check", q:"Vidíš odsud hrad? Ukaž dospělému, kde je.", pts:3},
+   {k:"choice", q:"Kde ráno vychází slunce?", o:["Na západě","Na východě","Na severu"], ok:1, pts:3},
+   {k:"choice", q:"Jdeme z Borovničky k Pecce. Na kterou světovou stranu jsme putovali hlavně?", o:["Na sever","Na jihozápad","Na východ"], ok:1, pts:3}
+  ]},
+ {id:11, ic:"👑", lat:50.480780, lng:15.606677, r:90, km:"7,2", place:"Náměstí v Pecce", title:"Sloup a kašna", where:"Na náměstí v Pecce pod hradem.",
+  intro:"Na náměstí stojí morový sloup z roku 1720 a vedle něj stará barokní kašna.",
+  items:[
+   {k:"number", q:"Spočítej sochy svatých na zábradlí kolem morového sloupu. Kolik jich je?", ok:8, pts:4},
+   {k:"choice", q:"Sloup postavili v roce 1720. Které je to století?", o:["17. století","18. století","20. století"], ok:1, pts:3},
+   {k:"check", q:"Najdi kašnu a obejdi ji jednou dokola.", pts:2}
+  ]},
+ {id:12, ic:"🏆", lat:50.478957, lng:15.604548, r:90, km:"7,5", place:"Hrad Pecka", title:"Hradní zkouška", where:"Na hradě, nebo u brány, když je zavřeno.",
+  intro:"Jsi u cíle. Poslední zkouška rozhodne, jestli se staneš pánem z Pecky.",
+  items:[
+   {k:"choice", q:"Proč se hrad jmenuje Pecka?", o:["Pán hradu měl rád švestky","Měl být pevný jako pecka","Stojí na hromadě pecek"], ok:1, pts:3},
+   {k:"choice", q:"Kryštof Harant, slavný pán hradu, byl…", o:["cestovatel, skladatel a spisovatel","kuchař a cukrář","lodní kapitán"], ok:0, pts:3},
+   {k:"choice", q:"Harant putoval až do Svaté země. Které město tam navštívil? (Kopec s tímhle jménem je i kousek od Pecky!)", o:["Paříž","Jeruzalém","Londýn"], ok:1, pts:3},
+   {k:"choice", q:"Po čem se jde k hradní bráně?", o:["Po kamenném mostě","Po provazovém žebříku","Po padacím laně"], ok:0, pts:3},
+   {k:"choice", q:"Hradní bistro se jmenuje Polžicích. Po kom má jméno?", o:["Po vesnici u Brna","Po Harantovi z Polžic a Bezdružic","Po polévce"], ok:1, pts:3},
+   {k:"choice", q:"Co najdeš v hradním sklepení?", o:["Mučírnu","Bazén","Kino"], ok:0, pts:3}
+  ]}
+];
+const AVATARS = [["🐴","#1b3a8a"],["🦁","#b8323f"],["🐉","#23704f"],["🦅","#1d5fa8"],["🦄","#6a3d9a"],["🐺","#3d4a66"],["🐻","#8a5a2b"],["🦊","#c4622d"],["🦉","#2c3e7a"],["🐗","#5b4636"],["🦌","#a07a2c"],["🐲","#127a8a"]];
+const RANKS = [[0,"🐴 Panoš"],[0.35,"🛡️ Zbrojnoš"],[0.6,"⚔️ Rytíř"],[0.8,"👑 Pán z Pecky"]];
+const BADGES = [
+ {id:"sifrant", ic:"🔐", name:"Šifrant", test:p=>pt(p,6,0)===15},
+ {id:"stopar", ic:"🍂", name:"Lesní stopař", test:p=>pt(p,4,0)>=10},
+ {id:"kviz", ic:"🎯", name:"Kvízmistr", test:p=>choiceHits(p)>=15},
+ {id:"rytir", ic:"🛡️", name:"Neohrožený", test:p=>[1,2,3].every(i=>pt(p,8,i)>0)},
+ {id:"oko", ic:"👁️", name:"Bystré oko", test:p=>pt(p,11,0)===4},
+ {id:"slova", ic:"🔤", name:"Slovní kouzelník", test:p=>[0,1,2,3].every(i=>pt(p,9,i)===3)},
+ {id:"perfekt", ic:"⭐", name:"Tři hvězdy", test:p=>STATIONS.filter(s=>p.done?.[s.id] && stPts(p,s.id)===stMax(s)).length>=3},
+ {id:"dobyvatel", ic:"🏰", name:"Dobyvatel hradu", test:p=>!!p.done?.[12]}
+];
+
+/* ---------- body ---------- */
+function maxOf(it){ if(it.bands) return it.bands[0][1]; if(it.k==="bingo") return it.max; return it.pts||0; }
+const stMax = s => s.items.reduce((a,it)=>a+maxOf(it),0);
+const MAX_TOTAL = STATIONS.reduce((a,s)=>a+stMax(s),0);
+const pt = (p,sid,i) => p?.ans?.[sid]?.[i]?.pts||0;
+const stPts = (p,sid) => Object.values(p?.ans?.[sid]||{}).reduce((a,r)=>a+(r.pts||0),0);
+const totalOf = p => STATIONS.reduce((a,s)=>a+stPts(p,s.id),0);
+const doneCount = p => STATIONS.filter(s=>p.done?.[s.id]).length;
+function choiceHits(p){ let n=0; for(const s of STATIONS) s.items.forEach((it,i)=>{ if(it.k==="choice" && pt(p,s.id,i)>0) n++; }); return n; }
+const rankOf = p => { const r=totalOf(p)/MAX_TOTAL; let n=RANKS[0][1]; for(const [m,t] of RANKS) if(r>=m) n=t; return n; };
+const badgesOf = p => BADGES.filter(b=>{ try{return b.test(p);}catch(e){return false;} }).map(b=>b.id);
+function sorted(){ return Object.values(S.players).sort((a,b)=>totalOf(b)-totalOf(a) || doneCount(b)-doneCount(a) || (a.name||"").localeCompare(b.name||"","cs")); }
+function placeOf(id){ const list=sorted(); const me=list.find(p=>p.id===id); if(!me) return null; const t=totalOf(me); return list.filter(p=>totalOf(p)>t).length+1; }
+
+/* ---------- stav ---------- */
+const LS_SESSION="pecka-session", LS_ME="pecka-me";
+const S = { players:{}, loaded:false, offline:false, session:null, view:"home", cfg:{}, pos:null, geoErr:null, adminPin:null, adminList:null, dirty:false };
+function lsGet(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+S.session = lsGet(LS_SESSION);
+const me = () => S.session ? S.players[S.session.id] : null;
+
+async function api(method, url, body, headers={}){
+  const r = await fetch(url, { method, headers:{ "Content-Type":"application/json", ...headers }, body: body?JSON.stringify(body):undefined });
+  let data={}; try{ data=await r.json(); }catch(e){}
+  if(!r.ok) throw Object.assign(new Error(data.error||"Chyba spojení"), {status:r.status});
+  return data;
+}
+
+async function refresh(){
+  try{
+    const { players } = await api("GET","/api/players");
+    const fresh={}; players.forEach(p=>fresh[p.id]=p);
+    const mine = me();
+    if(mine && (S.dirty || S.view.startsWith("s"))) fresh[mine.id] = mine;   // vlastní rozehraný stav má přednost
+    S.players=fresh; S.loaded=true; S.offline=false;
+    if(S.session && !S.players[S.session.id]) { logout(false); }
+    if(S.session && S.players[S.session.id]) lsSet(LS_ME, S.players[S.session.id]);
+  }catch(e){
+    S.offline=true;
+    if(!S.loaded && S.session){ const cached=lsGet(LS_ME); if(cached) S.players[cached.id]=cached; S.loaded=true; }
+  }
+  const v=S.view;
+  if(v==="home"||v==="final") render(); else updateBar();
+}
+
+let saving=false;
+async function savePlayer(p){
+  S.players[p.id]=p; S.dirty=true; lsSet(LS_ME,p);
+  if(saving) return; saving=true;
+  try{
+    while(S.dirty){
+      S.dirty=false;
+      const cur=S.players[p.id];
+      await api("PUT","/api/players/"+p.id,{ ans:cur.ans, done:cur.done, unlocked:cur.unlocked, total:totalOf(cur) },{ "x-token":S.session.token });
+    }
+    S.offline=false;
+  }catch(e){
+    S.dirty=true;
+    if(e.status===401){ toast("Přihlášení vypršelo, přihlas se znovu."); logout(); }
+    else { S.offline=true; }
+  }finally{ saving=false; }
+}
+setInterval(()=>{ if(S.dirty && me()) savePlayer(me()); }, 8000);
+setInterval(refresh, 6000);
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refresh(); });
+window.addEventListener("online",()=>{ if(me()) savePlayer(me()); refresh(); });
+
+/* ---------- poloha ---------- */
+let geoWatch=null;
+function startGeo(){
+  if(geoWatch!==null || !navigator.geolocation) { if(!navigator.geolocation) S.geoErr="Tenhle telefon neumí zjistit polohu."; return; }
+  geoWatch = navigator.geolocation.watchPosition(pos=>{
+    S.pos={lat:pos.coords.latitude,lng:pos.coords.longitude,acc:pos.coords.accuracy}; S.geoErr=null;
+    checkUnlocks(); updateGeoUI();
+  }, err=>{
+    S.geoErr = err.code===1 ? "Poloha je vypnutá. Povol ji pro tuto stránku v nastavení prohlížeče." : "Polohu se nedaří zjistit. Zkus to pod širým nebem.";
+    updateGeoUI();
+  }, { enableHighAccuracy:true, maximumAge:5000, timeout:20000 });
+}
+function dist(a,b){ const R=6371000,t=Math.PI/180; const dLa=(b.lat-a.lat)*t, dLo=(b.lng-a.lng)*t; const x=Math.sin(dLa/2)**2+Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dLo/2)**2; return 2*R*Math.asin(Math.sqrt(x)); }
+const distTo = s => S.pos ? dist(S.pos,s) : null;
+const fmtDist = d => d==null ? "" : d<1000 ? `${Math.round(d/10)*10} m` : `${(d/1000).toFixed(1).replace(".",",")} km`;
+const isOpen = (p,s) => !!(p.done?.[s.id] || p.unlocked?.[s.id]);
+function checkUnlocks(){
+  const p=me(); if(!p || !S.pos) return;
+  for(const s of STATIONS){
+    if(isOpen(p,s)) continue;
+    if(distTo(s) <= s.r + Math.min(S.pos.acc||0, 40)){
+      p.unlocked = p.unlocked||{}; p.unlocked[s.id]=true; savePlayer(p);
+      toast(`Jsi u výzvy ${s.id}: ${s.title}!`, s.ic);
+      try{ navigator.vibrate && navigator.vibrate([150,80,150]); }catch(e){}
+      if(S.view==="trail" || S.view==="s"+s.id) render();
+    }
+  }
+}
+function nearestOpenable(p){ let best=null; for(const s of STATIONS){ if(p.done?.[s.id]) continue; const d=distTo(s); if(d!=null && (!best || d<best.d)) best={s,d}; } return best; }
+
+/* ---------- pomocníci UI ---------- */
+const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
+const el = (tag, attrs={}, ...kids) => { const n=document.createElement(tag); for(const [k,v] of Object.entries(attrs)){ if(k==="class") n.className=v; else if(k==="style") n.style.cssText=v; else if(k.startsWith("on")) n.addEventListener(k.slice(2),v); else if(v!==false && v!=null) n.setAttribute(k,v===true?"":v);} for(const c of kids.flat()){ if(c==null||c===false) continue; n.append(c.nodeType?c:document.createTextNode(String(c))); } return n; };
+const avatar = (p,size="") => { const a=AVATARS[p?.av??0]||AVATARS[0]; const n=el("span",{class:"av "+size,"aria-hidden":"true"},a[0]); n.style.setProperty("--c",a[1]); return n; };
+const app = document.getElementById("app");
+function go(view){ S.view=view; render(); window.scrollTo(0,0); }
+let toastTimer=null;
+function toast(msg, icon){
+  document.querySelector(".toast")?.remove();
+  const t=el("div",{class:"toast",role:"status"}, icon?el("span",{style:"font-size:22px"},icon):null, el("span",{},msg));
+  document.body.append(t); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.remove(),3400);
+}
+function logout(rerender=true){ S.session=null; lsSet(LS_SESSION,null); lsSet(LS_ME,null); if(rerender) go("home"); }
+
+function bar(backTo, backLabel){
+  const p=me();
+  const right = el("div",{class:"right"});
+  if(p && S.view!=="home") right.append(el("span",{class:"who"}, avatar(p,"sm"), el("span",{},p.name)), el("span",{class:"coin"}), el("span",{id:"tot"}, totalOf(p)));
+  else right.append(el("span",{class:"chip"}, S.offline?"Bez signálu":"Živé pořadí"));
+  return el("div",{class:"bar"},
+    backTo ? el("button",{class:"back",onclick:()=>go(backTo)},"← "+backLabel) : el("span",{class:"ttl"},"Pecka"),
+    right);
+}
+function updateBar(){ const t=document.getElementById("tot"); if(t && me()){ const v=String(totalOf(me())); if(t.textContent!==v){ t.textContent=v; t.classList.remove("pop"); void t.offsetWidth; t.classList.add("pop"); } } }
+
+/* ---------- obrazovky ---------- */
+function render(){
+  if(S.view!=="trail") destroyMap();
+  app.innerHTML="";
+  const v=S.view;
+  if(v==="home") return renderHome();
+  if(v==="new") return renderNew();
+  if(v==="admin") return renderAdmin();
+  if(v.startsWith("login:")) return renderLogin(v.slice(6));
+  if(!me()){ S.view="home"; return renderHome(); }
+  if(v==="trail") return renderTrail();
+  if(v==="final") return renderFinal();
+  const st = STATIONS.find(s=>"s"+s.id===v);
+  if(st) return renderStation(st);
+  S.view="home"; renderHome();
+}
+
+function renderHome(){
+  app.append(bar());
+  app.append(el("section",{class:"hero"},
+    heroArt(),
+    el("div",{class:"eyebrow"},"Hra na cestu pro malé rytíře"),
+    el("h1",{},"Výprava na Pecku"),
+    el("p",{},"Z Borovničky lesem po zelené do Lázní a odtud na hrad. Výzvy se otevírají, až k nim dojdeš. Každý hraje sám za sebe, sbírá body a odznaky. Kdo se stane pánem z Pecky?"),
+    el("div",{class:"facts"}, el("span",{},"7,5 km"), el("span",{},"12 výzev"), el("span",{},MAX_TOTAL+" bodů"), el("span",{},BADGES.length+" odznaků")),
+    el("div",{class:"deco","aria-hidden":"true"},"🐎","⚔️","❤️","🛡️","👑","❤️","🐴")));
+
+  const list = sorted();
+  const sec1 = el("section",{class:"sec"}, el("h3",{},"Síň slávy"));
+  if(!S.loaded) sec1.append(el("div",{class:"empty"},"Načítám výpravu…"));
+  else if(!list.length) sec1.append(el("div",{class:"empty"},"Zatím nikdo nehraje. Přidej prvního rytíře dole."));
+  else {
+    const ol=el("ol",{class:"board"});
+    list.forEach(p=>{
+      const pl=placeOf(p.id);
+      ol.append(el("li",{class:p.id===S.session?.id?"me":""},
+        el("span",{class:"place"+(pl<=3&&totalOf(p)>0?" p"+pl:"")}, pl),
+        avatar(p,"sm"),
+        el("div",{class:"nm"}, el("b",{},p.name), el("div",{class:"small"}, `${rankOf(p)} · ${doneCount(p)}/12 · ${badgesOf(p).length} odznaků`), el("div",{class:"prog"}, el("i",{style:`width:${doneCount(p)/12*100}%`}))),
+        el("span",{class:"pt"}, totalOf(p))));
+    });
+    sec1.append(ol);
+  }
+  app.append(sec1);
+  if(S.session && me()) app.append(el("button",{class:"primary",onclick:()=>go("trail")},`Pokračovat jako ${me().name}`));
+
+  const sec2 = el("section",{class:"sec"}, el("h3",{},"Který rytíř jde do boje?"));
+  const grid = el("div",{class:"pick"});
+  list.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||"","cs")).forEach(p=>grid.append(
+    el("button",{onclick:()=>go("login:"+p.id),"aria-label":"Přihlásit "+p.name}, avatar(p), el("span",{},p.name))));
+  grid.append(el("button",{class:"add",onclick:()=>go("new")}, el("span",{class:"plus"},"+"), el("span",{},"Nový rytíř")));
+  sec2.append(grid);
+  app.append(sec2);
+  if(S.cfg.admin) app.append(el("p",{style:"margin-top:26px;text-align:center"}, el("button",{class:"linkish",onclick:()=>go("admin")},"Správa rytířů (pro dospělé)")));
+}
+
+function renderNew(){
+  app.append(bar("home","Zpět"));
+  let av = Object.values(S.players).length % AVATARS.length;
+  const wrap = el("section",{class:"sec"}, el("h3",{},"Nový rytíř"));
+  const name = el("input",{id:"np-name",type:"text",maxlength:"16",autocomplete:"off",placeholder:"Tvoje jméno nebo přezdívka"});
+  const pin = el("input",{id:"np-pin",type:"password",inputmode:"numeric",maxlength:"4",autocomplete:"off",placeholder:"4 číslice"});
+  const err = el("div",{class:"err",role:"alert"});
+  const ag = el("div",{class:"avgrid"});
+  const drawAv = () => { ag.innerHTML=""; AVATARS.forEach((a,i)=>ag.append(el("button",{type:"button","aria-pressed":String(i===av),"aria-label":"Erb "+(i+1),onclick:()=>{av=i;drawAv();}}, avatar({av:i})))); };
+  drawAv();
+  const btn = el("button",{class:"primary"},"🛡️ Pasovat na rytíře a vyrazit");
+  btn.addEventListener("click", async ()=>{
+    const n=name.value.trim(), k=pin.value.trim();
+    if(n.length<2){ err.textContent="Napiš jméno, aspoň 2 písmena."; return; }
+    if(!/^\d{4}$/.test(k)){ err.textContent="PIN musí mít přesně 4 číslice."; return; }
+    btn.disabled=true;
+    try{
+      const { player, token } = await api("POST","/api/players",{ name:n, av, pin:k });
+      S.players[player.id]=player; S.session={id:player.id, token}; lsSet(LS_SESSION,S.session); lsSet(LS_ME,player);
+      toast(`Vítej na výpravě, ${n}!`,"🛡️"); go("trail");
+    }catch(e){ err.textContent = e.status ? e.message : "Nejde se spojit se serverem. Zkontroluj signál."; btn.disabled=false; }
+  });
+  wrap.append(
+    el("div",{class:"field"}, el("label",{for:"np-name"},"Jméno"), name),
+    el("div",{class:"field"}, el("label",{},"Vyber si erb se zvířetem"), ag),
+    el("div",{class:"field"}, el("label",{for:"np-pin"},"Tajný kód (PIN)"), pin, el("span",{class:"small"},"Zapamatuj si ho, budeš ho zadávat při každém přihlášení.")),
+    err, btn);
+  app.append(wrap);
+  setTimeout(()=>name.focus(),50);
+}
+
+function renderLogin(id){
+  const p=S.players[id];
+  if(!p){ go("home"); return; }
+  app.append(bar("home","Zpět"));
+  let code="", busy=false;
+  const dots=el("div",{class:"dots","aria-label":"Zadané číslice"});
+  const msg=el("div",{class:"err",role:"alert"});
+  const drawDots=()=>{ dots.innerHTML=""; for(let i=0;i<4;i++) dots.append(el("i",{class:i<code.length?"on":""})); };
+  drawDots();
+  const press=async d=>{
+    if(busy) return;
+    if(d==="del"){ code=code.slice(0,-1); drawDots(); return; }
+    if(code.length>=4) return;
+    code+=d; drawDots();
+    if(code.length===4){
+      busy=true;
+      try{
+        const { player, token } = await api("POST","/api/login",{ id, pin:code });
+        S.players[player.id]=player; S.session={id, token}; lsSet(LS_SESSION,S.session); lsSet(LS_ME,player);
+        toast(`Ahoj, ${player.name}!`,"👋"); go(nextStop(player)?"trail":"final");
+      }catch(e){
+        msg.textContent = e.status ? e.message : "Nejde se spojit se serverem.";
+        dots.classList.remove("shake"); void dots.offsetWidth; dots.classList.add("shake");
+        setTimeout(()=>{ code=""; drawDots(); busy=false; },350);
+      }
+    }
+  };
+  const pad=el("div",{class:"pad"});
+  ["1","2","3","4","5","6","7","8","9","","0","del"].forEach(d=>{
+    if(!d) return pad.append(el("span"));
+    pad.append(el("button",{onclick:()=>press(d),"aria-label":d==="del"?"Smazat":d}, d==="del"?"⌫":d));
+  });
+  app.append(el("section",{class:"login"}, avatar(p,"lg"), el("h2",{},p.name), el("p",{class:"small"},"Zadej svůj tajný kód"), dots, msg, pad));
+}
+
+const nextStop = p => STATIONS.find(s=>!p.done?.[s.id])?.id ?? null;
+function badgeRow(p){ const got=new Set(badgesOf(p)); return el("div",{class:"badges"}, BADGES.map(b=>el("div",{class:"badge"+(got.has(b.id)?" on":"")}, el("i",{},b.ic), b.name))); }
+
+/* mapa */
+let map=null, meMarker=null, meCircle=null;
+function destroyMap(){ if(map){ map.remove(); map=null; meMarker=null; meCircle=null; } }
+function buildMap(node, p){
+  if(!window.L) { node.append(el("div",{class:"small",style:"padding:16px"},"Mapa se nenačetla. Zkontroluj signál.")); return; }
+  map = L.map(node,{ zoomControl:true, attributionControl:true }).setView([50.491,15.636],14);
+  if(S.cfg.mapyKey){
+    L.tileLayer(`https://api.mapy.cz/v1/maptiles/outdoor/256/{z}/{x}/{y}?apikey=${S.cfg.mapyKey}`,{ minZoom:0, maxZoom:19,
+      attribution:'<a href="https://api.mapy.cz/copyright" target="_blank" rel="noopener">&copy; Seznam.cz a.s. a další</a>' }).addTo(map);
+    const Logo=L.Control.extend({ options:{position:"bottomleft"}, onAdd(){ const c=L.DomUtil.create("div"); c.innerHTML='<a href="https://mapy.com/" target="_blank" rel="noopener"><img src="https://api.mapy.cz/img/api/logo.svg" alt="Mapy.com" style="height:20px"></a>'; return c; } });
+    new Logo().addTo(map);
+  } else {
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{ maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+  }
+  const route = L.polyline(ROUTE,{ color:"#1d44a3", weight:5, opacity:.75, dashArray:"8 8" }).addTo(map);
+  const nx = nextStop(p);
+  STATIONS.forEach(s=>{
+    const state = p.done?.[s.id] ? "done" : isOpen(p,s) ? "open" : s.id===nx ? "next" : "";
+    const icon = L.divIcon({ className:"", html:`<div class="mk ${state}">${p.done?.[s.id]?"✓":s.id}</div>`, iconSize:[32,36], iconAnchor:[16,34] });
+    L.marker([s.lat,s.lng],{icon, title:s.title}).addTo(map).on("click",()=>go("s"+s.id));
+  });
+  map.fitBounds(route.getBounds(),{ padding:[18,18] });
+  drawMe();
+}
+function drawMe(){
+  if(!map || !S.pos) return;
+  const ll=[S.pos.lat,S.pos.lng];
+  if(!meMarker){
+    meCircle=L.circle(ll,{ radius:S.pos.acc||20, color:"#0f6fb8", weight:1, fillOpacity:.12 }).addTo(map);
+    meMarker=L.marker(ll,{ icon:L.divIcon({ className:"", html:`<div class="mepin">${AVATARS[me()?.av??0][0]}</div>`, iconSize:[36,36], iconAnchor:[18,18] }), zIndexOffset:1000 }).addTo(map);
+  } else { meMarker.setLatLng(ll); meCircle.setLatLng(ll).setRadius(S.pos.acc||20); }
+}
+function geoLine(){
+  const p=me(); const n = p ? nearestOpenable(p) : null;
+  if(S.geoErr) return el("div",{class:"geo warn"}, S.geoErr);
+  if(!S.pos) return el("div",{class:"geo"}, "📍 Hledám tvoji polohu…");
+  if(!n) return el("div",{class:"geo"}, "📍 Poloha nalezena.");
+  return el("div",{class:"geo"}, `📍 Nejbližší výzva: ${n.s.id}. ${n.s.title} – ${fmtDist(n.d)}`);
+}
+function updateGeoUI(){
+  drawMe();
+  const g=document.getElementById("geo"); if(g) g.replaceChildren(geoLine());
+  const lk=document.getElementById("lockdist"); const st=STATIONS.find(s=>"s"+s.id===S.view);
+  if(lk && st) lk.textContent = S.pos ? `Do cíle výzvy zbývá asi ${fmtDist(distTo(st))}.` : (S.geoErr||"Hledám tvoji polohu…");
+}
+
+function renderTrail(){
+  const p=me(), nx=nextStop(p), pl=placeOf(p.id), n=Object.keys(S.players).length;
+  startGeo();
+  app.append(bar("home","Síň slávy"));
+  app.append(el("section",{class:"pcard"}, avatar(p,"lg"), el("div",{style:"min-width:0"}, el("h2",{},p.name), el("div",{class:"rk"}, rankOf(p)))));
+  app.append(el("div",{class:"stats"},
+    el("div",{}, el("b",{},totalOf(p)), el("span",{},"bodů")),
+    el("div",{}, el("b",{}, pl?`${pl}.`:"–"), el("span",{},`místo z ${n}`)),
+    el("div",{}, el("b",{}, `${doneCount(p)}/12`), el("span",{},"výzev"))));
+  const mapBox=el("div",{class:"map",id:"map"});
+  app.append(el("section",{class:"sec"}, el("h3",{},"Mapa výpravy"), el("div",{id:"geo"}, geoLine()), mapBox,
+    el("p",{class:"small",style:"margin:8px 0 0"},"Čárkovaná čára je trasa zjednodušeně. Na cestě se drž turistických značek.")));
+  requestAnimationFrame(()=>{ destroyMap(); buildMap(mapBox,p); });
+  app.append(el("section",{class:"sec"}, el("h3",{},"Odznaky"), badgeRow(p)));
+  const ol=el("ol",{class:"trail"});
+  for(const s of STATIONS){
+    const cls="stop"+(p.done?.[s.id]?" done":"")+(s.id===nx?" next":"");
+    const status = p.done?.[s.id] ? el("span",{class:"pts"}, `${stPts(p,s.id)}/${stMax(s)}`) : isOpen(p,s) ? el("span",{class:"open"},"Otevřeno") : el("span",{class:"lock"},`🔒 ${s.km} km`);
+    ol.append(el("li",{class:cls}, el("button",{class:"node",onclick:()=>go("s"+s.id),"aria-label":`Výzva ${s.id}: ${s.title}`},
+      el("span",{class:"dot"}, p.done?.[s.id]?"✓":s.id),
+      el("span",{class:"ico","aria-hidden":"true"},s.ic),
+      el("span",{class:"meta"}, el("div",{class:"place2"},`${s.place} · ${s.km} km`), el("div",{class:"name2"},s.title)),
+      status)));
+  }
+  app.append(el("section",{class:"sec"}, el("h3",{},"Cesta"), ol,
+    el("div",{class:"castle"}, el("span",{class:"dot"},"♜"), el("span",{class:"meta"}, el("div",{class:"place2"},"Cíl · 7,5 km"), el("div",{class:"name2"},"Hrad Pecka")))));
+  if(!nx) app.append(el("button",{class:"primary",onclick:()=>go("final")},"👑 Můj výsledek"));
+  app.append(el("button",{class:"ghost",style:"width:100%;margin-top:12px",onclick:()=>logout()},"Odhlásit a předat telefon dalšímu"));
+}
+
+function renderStation(st){
+  const p=me();
+  startGeo();
+  app.append(bar("trail","Mapa"));
+  app.append(el("header",{class:"shead"},
+    el("div",{class:"emblem","aria-hidden":"true"},st.ic),
+    el("div",{class:"num"},`Výzva ${st.id} z 12 · ${st.km} km od startu`),
+    el("h2",{},st.title),
+    el("div",{class:"where"}, el("b",{},"Kde: "), st.where)));
+  if(!isOpen(p,st)){
+    const area=el("div",{class:"confirm"});
+    const manual=el("button",{class:"ghost",onclick:()=>{
+      area.replaceChildren(el("p",{class:"small",style:"width:100%"},"Jste opravdu na místě? Potvrdí dospělý."),
+        el("button",{class:"yes",onclick:()=>{ p.unlocked=p.unlocked||{}; p.unlocked[st.id]=true; savePlayer(p); render(); }},"Ano, otevřít"),
+        el("button",{class:"nope",onclick:()=>area.replaceChildren(manual)},"Ne"));
+    }},"GPS zlobí? Otevřít ručně");
+    area.append(manual);
+    app.append(el("div",{class:"locked"},
+      el("div",{class:"lockicon","aria-hidden":"true"},"🔒"),
+      el("h3",{},"Výzva je zatím zamčená"),
+      el("p",{},"Otevře se sama, až k ní dojdeš."),
+      el("p",{id:"lockdist",class:"small"}, S.pos?`Do cíle výzvy zbývá asi ${fmtDist(distTo(st))}.`:(S.geoErr||"Hledám tvoji polohu…")),
+      area));
+    return;
+  }
+  app.append(el("p",{class:"intro"},st.intro));
+  if(st.warn) app.append(el("div",{class:"warn"},st.warn));
+  const box=el("div",{class:"items"});
+  st.items.forEach((it,i)=>box.append(itemCard(st,it,i)));
+  app.append(box);
+  const last=st.id===12;
+  if(!p.done?.[st.id]) app.append(el("button",{class:"primary",onclick:()=>{
+    const before = badgesOf(p);
+    p.done = p.done||{}; p.done[st.id]=true; savePlayer(p);
+    const newB = badgesOf(p).filter(b=>!before.includes(b));
+    confetti();
+    if(newB.length){ const b=BADGES.find(x=>x.id===newB[0]); toast(`Nový odznak: ${b.name}!`, b.ic); }
+    else toast(`+${stPts(p,st.id)} bodů. Jsi ${placeOf(p.id)}. v pořadí.`,"🪙");
+    go(last||!nextStop(p)?"final":"trail");
+  }}, last?"👑 Dokončit výpravu":"⚔️ Výzva splněna! Zpět na mapu"));
+  else app.append(el("button",{class:"ghost",style:"width:100%;margin-top:20px",onclick:()=>go("trail")},"Zpět na mapu"));
+  app.append(el("p",{class:"small",style:"text-align:center;margin-top:10px"},"Neodpovězené úkoly se počítají za 0 bodů."));
+}
+
+function answer(st,i,r){
+  const p=me(); const before=badgesOf(p);
+  p.ans=p.ans||{}; (p.ans[st.id] ||= {})[i]=r;
+  savePlayer(p); updateBar();
+  const nb=badgesOf(p).filter(b=>!before.includes(b));
+  if(nb.length){ const b=BADGES.find(x=>x.id===nb[0]); toast(`Nový odznak: ${b.name}!`, b.ic); confetti(); }
+}
+const resOf = (st,i) => me()?.ans?.[st.id]?.[i];
+function gotLine(r,max){ const h=r.pts===max?"❤️❤️❤️":r.pts>0?"❤️":"🤍"; return el("div",{class:"got"}, el("span",{}, el("span",{class:"hearts"},h+" "), r.pts===max?"Rytířsky skvělé!":(r.pts>0?"Statečný pokus":"Příště to vyjde")), el("span",{class:"p"},`+${r.pts} b`)); }
+
+function itemCard(st,it,i){
+  const r=resOf(st,i);
+  const card=el("div",{class:"card"});
+  const refresh=()=>card.replaceWith(itemCard(st,it,i));
+  const tags={choice:"Kvíz",text:"Hádanka",estimate:"Odhad",check:"Výzva",bingo:"Hledačka",timer:"Časovač",count:"Počítání",cipher:"Šifra",number:"Počítání"};
+  card.append(el("span",{class:"tag"}, it.scr?"Přesmyčka":tags[it.k]));
+
+  if(it.k==="choice"){
+    card.append(el("p",{class:"q"},it.q));
+    const opts=el("div",{class:"opts"});
+    it.o.forEach((o,j)=>{ let c="opt"; if(r){ if(j===it.ok) c+=" ok"; else if(j===r.val) c+=" no"; }
+      opts.append(el("button",{class:c,disabled:!!r,onclick:()=>{ answer(st,i,{val:j,pts:j===it.ok?it.pts:0}); refresh(); }},o)); });
+    card.append(opts);
+    if(r) card.append(gotLine(r,it.pts));
+  }
+  else if(it.k==="text"||it.k==="cipher"){
+    if(it.k==="cipher"){
+      card.append(el("div",{class:"cipher"},it.code));
+      const abc=el("div",{class:"abc","aria-label":"Pomocná abeceda"}); const A="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      for(let j=0;j<26;j++) abc.append(el("span",{}, el("i",{},A[(j+1)%26]), A[j]));
+      card.append(el("p",{class:"small",style:"margin:0 0 6px"},"Nahoře písmeno ze šifry, pod ním to pravé:"), abc);
+    }
+    if(it.scr) card.append(el("div",{class:"scr"},it.scr));
+    card.append(el("p",{class:"q"},it.q));
+    if(r?.final){
+      card.append(el("div",{class:"fb "+(r.pts?"ok":"no")}, r.pts?`Správně: ${r.val}`:`Správná odpověď: ${(it.solution||it.acc[0]).toUpperCase()}`));
+      card.append(gotLine(r,it.pts));
+    } else {
+      const tries=r?.tries||0, hinted=!!r?.hint;
+      const inp=el("input",{type:"text",id:`a${st.id}_${i}`,autocomplete:"off",autocapitalize:"characters",placeholder:"Tvoje odpověď"});
+      const check=()=>{ const v=norm(inp.value); if(!v) return;
+        const hit=it.acc.some(a=>v===a||(a.length>=4&&v.includes(a)));
+        if(hit){ let p=tries===0?it.pts:Math.ceil(it.pts/2); if(hinted) p=Math.max(1,p-Math.ceil(it.pts/3)); answer(st,i,{final:true,pts:p,val:inp.value.trim().toUpperCase()}); }
+        else if(tries>=2) answer(st,i,{final:true,pts:0});
+        else answer(st,i,{tries:tries+1,hint:hinted,pts:0});
+        refresh(); };
+      inp.addEventListener("keydown",e=>{ if(e.key==="Enter") check(); });
+      card.append(el("div",{class:"row"}, inp, el("button",{class:"go",onclick:check},"Ověřit")));
+      if(tries) card.append(el("div",{class:"fb no"}, `To není ono. ${3-tries===1?"Zbývá 1 pokus.":"Zbývají 2 pokusy."}`));
+      if(it.hint){ if(hinted) card.append(el("div",{class:"fb mid"},"Nápověda: "+it.hint));
+        else card.append(el("button",{class:"hint",onclick:()=>{ answer(st,i,{tries,hint:true,pts:0}); refresh(); }},"Nápověda (stojí pár bodů)")); }
+    }
+  }
+  else if(it.k==="number"){
+    card.append(el("p",{class:"q"},it.q));
+    if(r?.final){ card.append(el("div",{class:"fb "+(r.pts?"ok":"no")}, r.pts?`Ano, je jich ${it.ok}.`:`Správně je ${it.ok}.`)); card.append(gotLine(r,it.pts)); }
+    else { const tries=r?.tries||0;
+      const inp=el("input",{type:"number",inputmode:"numeric",id:`a${st.id}_${i}`,placeholder:"Počet"});
+      const check=()=>{ if(inp.value==="") return; const v=Number(inp.value);
+        if(v===it.ok) answer(st,i,{final:true,pts:tries===0?it.pts:Math.ceil(it.pts/2)});
+        else if(tries>=1) answer(st,i,{final:true,pts:0});
+        else answer(st,i,{tries:1,pts:0});
+        refresh(); };
+      card.append(el("div",{class:"row"}, inp, el("button",{class:"go",onclick:check},"Ověřit")));
+      if(tries) card.append(el("div",{class:"fb no"},"Přepočítej to, máš poslední pokus."));
+    }
+  }
+  else if(it.k==="estimate"){
+    card.append(el("p",{class:"q"},it.q));
+    if(r){ card.append(el("div",{class:"big"},`${String(r.val).replace(".",",")} ${it.unit}`), el("div",{class:"fb mid",style:"text-align:center"},`Ve skutečnosti je to ${String(it.target).replace(".",",")} ${it.unit}.`), gotLine(r,it.bands[0][1])); }
+    else { const mid=(it.min+it.max)/2;
+      const out=el("div",{class:"big"},`${String(mid).replace(".",",")} ${it.unit}`);
+      const sl=el("input",{type:"range",class:"slider",id:`a${st.id}_${i}`,min:it.min,max:it.max,step:it.step,value:mid,"aria-label":"Tvůj odhad"});
+      sl.addEventListener("input",()=>out.textContent=`${String(sl.value).replace(".",",")} ${it.unit}`);
+      card.append(out, sl, el("button",{class:"go",style:"margin-top:12px;width:100%",onclick:()=>{ const v=Number(sl.value), d=Math.abs(v-it.target); let p=it.floor; for(const [lim,pp] of it.bands){ if(d<=lim){p=pp;break;} } answer(st,i,{val:v,pts:p}); refresh(); }},"Tohle je můj odhad"));
+    }
+  }
+  else if(it.k==="check"){
+    card.append(el("p",{class:"q"},it.q));
+    if(r) card.append(gotLine(r,it.pts));
+    else { card.append(el("div",{class:"checks"},
+      el("button",{class:"yes",onclick:()=>{ answer(st,i,{pts:it.pts}); refresh(); }},`Splněno (+${it.pts})`),
+      el("button",{class:"nope",onclick:()=>{ answer(st,i,{pts:0}); refresh(); }},"Nepovedlo se")));
+      card.append(el("p",{class:"small",style:"margin:8px 0 0"},"Potvrzuje dospělý.")); }
+  }
+  else if(it.k==="bingo"){
+    card.append(el("p",{class:"q"},it.q));
+    const sel=new Set(r?.val||[]);
+    const cnt=el("p",{class:"small",style:"margin:10px 0 0"},`Nalezeno ${sel.size} z ${it.list.length}`);
+    const grid=el("div",{class:"bingo"});
+    it.list.forEach((t,j)=>{ const b=el("button",{"aria-pressed":String(sel.has(j)),disabled:!!r},t);
+      b.addEventListener("click",()=>{ sel.has(j)?sel.delete(j):sel.add(j); b.setAttribute("aria-pressed",String(sel.has(j))); cnt.textContent=`Nalezeno ${sel.size} z ${it.list.length}`; });
+      grid.append(b); });
+    card.append(grid,cnt);
+    if(r) card.append(gotLine(r,it.max));
+    else card.append(el("button",{class:"go",style:"margin-top:12px;width:100%",onclick:()=>{ answer(st,i,{val:[...sel],pts:Math.min(it.max,sel.size*it.each)}); refresh(); }},"Hotovo, spočítat body"));
+  }
+  else if(it.k==="timer"){
+    card.append(el("p",{class:"q"},it.q));
+    const fmt=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+    const disp=el("div",{class:"timer","aria-live":"polite"},fmt(it.secs));
+    let t=null,left=it.secs; const btn=el("button",{class:"go",style:"width:100%"},"Spustit");
+    btn.addEventListener("click",()=>{
+      if(t){ clearInterval(t); t=null; left=it.secs; disp.textContent=fmt(left); disp.classList.remove("end"); btn.textContent="Spustit"; return; }
+      left=it.secs; disp.classList.remove("end"); btn.textContent="Zastavit";
+      t=setInterval(()=>{ left--; disp.textContent=fmt(Math.max(0,left)); if(left<=0){ clearInterval(t); t=null; disp.textContent="Čas!"; disp.classList.add("end"); btn.textContent="Znovu"; try{navigator.vibrate&&navigator.vibrate([200,100,200]);}catch(e){} } },1000);
+    });
+    card.append(disp,btn);
+  }
+  else if(it.k==="count"){
+    card.append(el("p",{class:"q"},it.q));
+    if(r){ card.append(el("div",{class:"big"},String(r.val)), gotLine(r,it.bands[0][1])); }
+    else { const inp=el("input",{type:"number",inputmode:"numeric",min:"0",id:`a${st.id}_${i}`,placeholder:"Počet"});
+      card.append(el("div",{class:"row"}, inp, el("button",{class:"go",onclick:()=>{ if(inp.value==="") return; const v=Math.max(0,Math.round(Number(inp.value))); let p=0; for(const [m,pp] of it.bands){ if(v>=m){p=pp;break;} } answer(st,i,{val:v,pts:p}); refresh(); }},"Zapsat"))); }
+  }
+  return card;
+}
+
+function renderFinal(){
+  const p=me(), pl=placeOf(p.id), n=Object.keys(S.players).length;
+  app.append(bar("trail","Mapa"));
+  app.append(el("section",{class:"final"}, heroArt(), avatar(p,"lg"),
+    el("div",{class:"crown","aria-hidden":"true"},"👑"),
+    el("h2",{}, p.done?.[12]?"Hrad dobyt!":"Výprava pokračuje"),
+    el("div",{class:"rank"}, `${p.name}: ${rankOf(p)}`),
+    el("p",{}, `${totalOf(p)} z ${MAX_TOTAL} bodů · ${pl}. místo z ${n}`)));
+  app.append(el("section",{class:"sec"}, el("h3",{},"Moje odznaky"), badgeRow(p)));
+  app.append(el("p",{class:"small",style:"margin-top:16px"},"Hodnosti: Panoš, Zbrojnoš (35 %), Rytíř (60 %), Pán z Pecky (80 % bodů)."));
+  app.append(el("button",{class:"primary",onclick:()=>go("home")},"Síň slávy celé výpravy"));
+  app.append(el("button",{class:"ghost",style:"width:100%;margin-top:10px",onclick:()=>logout()},"Odhlásit a předat telefon dalšímu"));
+}
+
+function renderAdmin(){
+  app.append(bar("home","Zpět"));
+  const sec=el("section",{class:"sec"}, el("h3",{},"Správa rytířů"));
+  if(!S.adminPin){
+    const inp=el("input",{id:"admpin",type:"password",inputmode:"numeric",autocomplete:"off",placeholder:"Kód správce"});
+    const err=el("div",{class:"err",role:"alert"});
+    const ok=async()=>{ try{ const d=await api("GET","/api/admin/players",null,{"x-admin-pin":inp.value.trim()}); S.adminPin=inp.value.trim(); S.adminList=d.players; render(); }catch(e){ err.textContent=e.message; } };
+    inp.addEventListener("keydown",e=>{ if(e.key==="Enter") ok(); });
+    sec.append(el("p",{class:"small"},"Zadej kód správce (proměnná ADMIN_PIN na serveru)."), el("div",{class:"row"}, inp, el("button",{class:"go",onclick:ok},"Vstoupit")), err);
+    app.append(sec); return;
+  }
+  sec.append(el("p",{class:"small"},"Zapomenuté PINy a mazání testovacích rytířů."));
+  const ul=el("ul",{class:"adm"});
+  (S.adminList||[]).forEach(p=>{
+    const li=el("li",{}, avatar(p,"sm"), el("span",{class:"nm"},p.name), el("span",{class:"small"},"PIN "), el("code",{},p.pin));
+    const del=el("button",{class:"nope"},"Smazat");
+    del.addEventListener("click",()=>{ del.replaceWith(el("span",{class:"row",style:"width:100%"}, el("span",{class:"small",style:"flex:1"},`Opravdu smazat ${p.name} i s body?`),
+      el("button",{class:"nope",style:"border-color:var(--bad);color:var(--bad)",onclick:async()=>{ try{ await api("DELETE","/api/admin/players/"+p.id,null,{"x-admin-pin":S.adminPin}); S.adminList=S.adminList.filter(x=>x.id!==p.id); delete S.players[p.id]; if(S.session?.id===p.id) logout(false); render(); }catch(e){ toast(e.message); } }},"Ano, smazat"),
+      el("button",{class:"ghost",onclick:()=>render()},"Ne"))); });
+    li.append(del); ul.append(li);
+  });
+  if(!ul.children.length) ul.append(el("li",{},"Zatím žádní rytíři."));
+  sec.append(ul); app.append(sec);
+}
+
+/* ---------- obrázky ---------- */
+function svg(markup){ const d=document.createElement("div"); d.innerHTML=markup.trim(); return d.firstChild; }
+function heroArt(){ return svg(`<svg class="art" viewBox="0 0 360 150" role="img" aria-label="Hrad s praporci, meče, srdce a kůň">
+ <path d="M0 140 Q90 112 180 120 T360 132 V150 H0Z" fill="var(--pine-soft)"/>
+ <g fill="var(--pine)">
+  <rect x="128" y="62" width="104" height="68"/>
+  <rect x="104" y="36" width="34" height="94"/><rect x="222" y="36" width="34" height="94"/>
+  <rect x="160" y="22" width="40" height="44"/>
+  <path d="M104 36 h8 v-8 h6 v8 h4 v-8 h6 v8 h4 v-8 h6 v8 z"/><path d="M222 36 h8 v-8 h6 v8 h4 v-8 h6 v8 h4 v-8 h6 v8 z"/>
+  <path d="M128 62 h8 v-8 h8 v8 h8 v-8 h8 v8 h40 v-8 h8 v8 h8 v-8 h8 v8 h8 v0z"/>
+  <path d="M160 22 h6 v-7 h6 v7 h4 v-7 h6 v7 h4 v-7 h6 v7 h4 z"/>
+ </g>
+ <path d="M168 130 v-26 a12 12 0 0 1 24 0 v26z" fill="var(--bg)"/>
+ <rect x="114" y="60" width="12" height="16" rx="6" fill="var(--gold)"/><rect x="234" y="60" width="12" height="16" rx="6" fill="var(--gold)"/><rect x="174" y="34" width="12" height="14" rx="6" fill="var(--gold)"/>
+ <g stroke="var(--muted)" stroke-width="2"><line x1="121" y1="28" x2="121" y2="4"/><line x1="239" y1="28" x2="239" y2="4"/><line x1="180" y1="15" x2="180" y2="-2"/></g>
+ <path d="M121 4 l22 6 l-22 6z" fill="var(--heart)"/><path d="M239 4 l22 6 l-22 6z" fill="var(--gold)"/><path d="M180 0 l18 5 l-18 5z" fill="var(--plum)"/>
+ <g transform="translate(300 96)" stroke-linecap="round">
+  <g transform="rotate(35)"><line x1="0" y1="-40" x2="0" y2="22" stroke="var(--muted)" stroke-width="5"/><line x1="-11" y1="14" x2="11" y2="14" stroke="var(--gold)" stroke-width="5"/><circle cx="0" cy="27" r="4" fill="var(--gold)"/></g>
+  <g transform="rotate(-35)"><line x1="0" y1="-40" x2="0" y2="22" stroke="var(--muted)" stroke-width="5"/><line x1="-11" y1="14" x2="11" y2="14" stroke="var(--gold)" stroke-width="5"/><circle cx="0" cy="27" r="4" fill="var(--gold)"/></g>
+ </g>
+ <path d="M300 44 c-6-10-20-6-18 4c1 7 18 16 18 16s17-9 18-16c2-10-12-14-18-4z" fill="var(--heart)"/>
+ <path d="M70 30 c-3-5-10-3-9 2c.5 3.5 9 8 9 8s8.5-4.5 9-8c1-5-6-7-9-2z" fill="var(--heart)" opacity=".8"/>
+ <path d="M318 20 c-2-4-7-2-6.5 1.5c.4 2.5 6.5 5.5 6.5 5.5s6-3 6.5-5.5c.5-3.5-4.5-5.5-6.5-1.5z" fill="var(--heart)" opacity=".7"/>
+ <text x="40" y="132" font-size="64">🐎</text>
+</svg>`); }
+
+function confetti(){
+  if(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const c=document.getElementById("fx"); c.hidden=false;
+  const ctx=c.getContext("2d"), dpr=window.devicePixelRatio||1;
+  c.width=innerWidth*dpr; c.height=innerHeight*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  const cols=["#e8c063","#1d44a3","#d23b4b","#0f6fb8","#ffffff"];
+  const ps=Array.from({length:90},()=>({x:innerWidth/2,y:innerHeight*0.35,vx:(Math.random()-.5)*12,vy:Math.random()*-11-3,s:Math.random()*6+4,c:cols[(Math.random()*cols.length)|0],r:Math.random()*6}));
+  let f=0;
+  (function tick(){ ctx.clearRect(0,0,innerWidth,innerHeight);
+    ps.forEach(p=>{ p.vy+=.35; p.x+=p.vx; p.y+=p.vy; p.r+=.2; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.fillStyle=p.c; ctx.fillRect(-p.s/2,-p.s/4,p.s,p.s/2); ctx.restore(); });
+    if(++f<90) requestAnimationFrame(tick); else { ctx.clearRect(0,0,innerWidth,innerHeight); c.hidden=true; } })();
+}
+
+/* ---------- start ---------- */
+(async function boot(){
+  const cached=lsGet(LS_ME); if(S.session && cached && cached.id===S.session.id) S.players[cached.id]=cached;
+  if(S.session && cached) S.view="trail";
+  render();
+  try{ S.cfg = await api("GET","/api/config"); }catch(e){}
+  await refresh();
+  render();
+})();
+
+</script>
+</body>
+</html>
